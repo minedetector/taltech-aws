@@ -12,3 +12,13 @@ bucket that has the required tags of `Passed` and `Author`.
 If it doesn't then curl the public IP address of the instance and if the `Name` tags value matches
 what is written on the page ( in the index.html file ) then it uses the `Name` tags value to create
 a folder in `ica0017-results/lab2`. Puts a `passed.txt` file inside it with the correct tags.
+
+## Lab3
+
+Go through all of the buckets with the prefix `ica0017` existing in the account.
+Check wether they have static website hosting enabled or not.
+After which check if the tag exists.
+Finally check if the contents on the hosted page mention the tag `Name` value.
+
+If all of the aformentioned checks pass a new folder is created in `ica0017-results/lab3` that uses
+the value of the tag `Name` and creates a `passed.txt` file in it.
