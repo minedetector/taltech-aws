@@ -13,6 +13,9 @@ s3 = session.client('s3')
 # Use the describe_instances method to retrieve information about all instances
 instances = ec2.describe_instances()
 
+# Get all security groups
+security_groups = ec2.describe_security_groups()['SecurityGroups']
+
 # Create a list to store the instances' Name tags and public IP addresses
 instances_data = []
 
@@ -58,6 +61,45 @@ def get_instances_tags_ip():
             # Append the instance's Name tag and public IP address to the list
             instances_data.append({'Name': name_tag, 'Public IP': public_ip})
 
+def check_security_groups(sg_name):
+    # Loop through all security groups
+    for security_group in security_groups:
+        # Get the tags for the current security group
+        tags = security_group.get('Tags', [])
+        tag_set = False
+        
+        # Check if the tag with the key 'Name' and value UNI-id exists
+        for tag in tags:
+            if tag['Key'] == 'Name' and tag['Value'] == sg_name:
+                tag_set = True
+                print(f"Security Group {sg_name} with id {security_group['GroupId']} has the desired tag")
+
+                inbound_rules = security_group['IpPermissions']
+
+                # Check if the security group only allows inbound connections from SSH and HTTP
+                ssh_allowed = False
+                http_allowed = False
+                for rule in inbound_rules:
+                    for ip_range in rule.get('IpRanges', []):
+                        if rule['FromPort'] == 22:
+                            ssh_allowed = True
+                        elif rule['FromPort'] == 80:
+                            http_allowed = True
+                        if ssh_allowed and http_allowed:
+                            break
+
+                    if ssh_allowed and http_allowed:
+                        break
+                
+                if ssh_allowed and http_allowed:
+                    print(f"Security Group {sg_name} with id {security_group['GroupId']} has allowed inbound connections from SSH and HTTP")
+                    return True
+                else:
+                    print(f"Security Group {sg_name} with id {security_group['GroupId']} does not have allowed inbound connections from SSH and HTTP")
+    if tag_set == False:
+        print(f"No SG-s with the tag Name={sg_name}")
+    return False
+
 def check_instances():
     # Iterate through the instances_data and curl the public IP address
     for instance in instances_data:
@@ -68,7 +110,7 @@ def check_instances():
         result = subprocess.run(["curl", public_ip], capture_output=True, text=True)
 
         # Compare the webpage contents with the Name tag
-        if name in result.stdout:
+        if name in result.stdout and check_security_groups(name):
             if already_passed(name):
                 print(f"{name} already exists and passed")
                 continue
