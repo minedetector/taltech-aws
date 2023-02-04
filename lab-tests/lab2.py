@@ -1,5 +1,28 @@
 import boto3
 import subprocess
+import json
+import requests
+from datetime import datetime
+
+now = datetime.now()
+
+current_time = now.strftime("%H:%M:%S")
+print("Current Time =", current_time)
+
+lambda_client = boto3.client('lambda')
+
+# This is dumb
+# But for some reason this lambda function decides to cache the results of the previous run
+# meaning it doesn't show the correct output when students change something.
+# How big is the cache ? Does it have a TTL ? Who knows, thanks AWS
+def reset_lambda_function_cache(function_name):
+    response = lambda_client.update_function_configuration(
+        FunctionName=function_name,
+        Description=current_time
+    )
+    print(f"Lambda function {function_name} updated successfully.")
+
+reset_lambda_function_cache("test-lab2")
 
 # Create a session using the default profile
 session = boto3.Session()
@@ -20,6 +43,7 @@ security_groups = ec2.describe_security_groups()['SecurityGroups']
 instances_data = []
 
 lab = "lab2"
+
 
 def already_passed(name):
     # Check if the passed.txt file exists in the folder
@@ -49,8 +73,14 @@ def get_instances_tags_ip():
     # Iterate through the reservations and instances to extract the data
     for reservation in instances['Reservations']:
         for instance in reservation['Instances']:
+            if instance['State']['Name'] != "running":
+                continue
             name_tag = None
-            public_ip = instance['PublicIpAddress']
+            try:
+                public_ip = instance['PublicIpAddress']
+            except:
+                pass
+
 
             # Check if the instance has a Name tag
             for tag in instance['Tags']:
@@ -81,10 +111,13 @@ def check_security_groups(sg_name):
                 http_allowed = False
                 for rule in inbound_rules:
                     for ip_range in rule.get('IpRanges', []):
-                        if rule['FromPort'] == 22:
-                            ssh_allowed = True
-                        elif rule['FromPort'] == 80:
-                            http_allowed = True
+                        try:
+                            if rule['FromPort'] == 22:
+                                ssh_allowed = True
+                            elif rule['FromPort'] == 80:
+                                http_allowed = True
+                        except:
+                            print(f"No spcific port ranges in security group {sg_name}")
                         if ssh_allowed and http_allowed:
                             break
 
@@ -100,20 +133,28 @@ def check_security_groups(sg_name):
         print(f"No SG-s with the tag Name={sg_name}")
     return False
 
-def check_instances():
+def check_instances(event):
     # Iterate through the instances_data and curl the public IP address
+    uni_id = None
+    try:
+        uni_id = event['Name']
+    except:
+        pass
     for instance in instances_data:
         name = instance['Name']
+        if uni_id != None and uni_id not in name:
+            continue
         public_ip = instance['Public IP']
 
-        # Use subprocess to run the curl command
-        result = subprocess.run(["curl", public_ip], capture_output=True, text=True)
+        # Use requests to get the contents of the instance
+        result = requests.get(f"http://{public_ip}")
+
+        if already_passed(name):
+            print(f"{name} already exists and passed")
+            continue
 
         # Compare the webpage contents with the Name tag
-        if name in result.stdout and check_security_groups(name):
-            if already_passed(name):
-                print(f"{name} already exists and passed")
-                continue
+        if name in result.text and check_security_groups(name):
             print(f"Instance {name} has the correct Name tag")
             #create a folder in the ica0017-results bucket
             try:
@@ -123,18 +164,26 @@ def check_instances():
                 tags = [{'Key': 'passed', 'Value': 'true'}, {'Key': 'author', 'Value': 'lambda'}]
 
                 # Create passed.txt file
-                subprocess.run(["touch", "passed.txt"])
+                # subprocess.run(["touch", "passed.txt"])
 
                 # Upload the file to S3
                 s3.upload_file("passed.txt", 'ica0017-results', f'{lab}/{name}/passed.txt')
 
                 # Add tags to the uploaded file
                 s3.put_object_tagging(Bucket='ica0017-results', Key=f'{lab}/{name}/passed.txt', Tagging={'TagSet': tags})
-                print(f'passed.txt has been uploaded to {lab}/{name}/passed.txt with tags')
+                print(f'passed.txt has been uploaded to {lab}/{name} with tags')
             except Exception as e:
                 print(f"Error creating {name} folder in the ica0017-results bucket: {e}")
         else:
             print(f"Instance {name} does not have the correct Name tag")
 
-get_instances_tags_ip()
-check_instances()
+def lambda_handler(event, context):
+    get_instances_tags_ip()
+    check_instances(event)
+
+    return {
+        'statusCode': 200,
+        'body': json.dumps({'message': f'Hello, DONE!'})
+    }
+
+#lambda_handler("test", "test")
