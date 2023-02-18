@@ -22,3 +22,18 @@ Finally check if the contents on the hosted page mention the tag `Name` value.
 
 If all of the aformentioned checks pass a new folder is created in `ica0017-results/lab3` that uses
 the value of the tag `Name` and creates a `passed.txt` file in it.
+
+## Lab4
+
+Get all of the public subets that have a tag with the kay `User` attached and iterate through them 1-by-1.
+If the key `User` is defined for the test then only test
+their resources, otherwise test everyones.
+
+Next step is to test whether the public subnet has internet access
+and that the private subnet does not have internet access.
+
+If both previous checks pass then get the public IP of the
+website instance and check its contents.
+Also make sure that the private instance has no public IP defined.
+
+If all of the aformentioned checks pass then create the passed.txt file for the student.
