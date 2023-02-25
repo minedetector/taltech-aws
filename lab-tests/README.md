@@ -37,3 +37,17 @@ website instance and check its contents.
 Also make sure that the private instance has no public IP defined.
 
 If all of the aformentioned checks pass then create the passed.txt file for the student.
+
+## Lab5
+
+Start off by creating a dictionary containing all of the data about existing target groups.
+The dictionary holds the lb arn and tg arn for a student.
+After that info is gathered iterate through it to find out if the student has configured
+the Load Balancer correctly, if all of the tests pass return the public DNS Name attached to the LB
+
+After that are checks to confirm that everything in the launch configuration and Auto Scaling Groups
+was configured correctly, especially checking that the student uses their own resources.
+
+If all checks pass get the website contents a few times and store the output in a set.
+
+If the set has a size of more than 1 then pass the student.
