@@ -61,7 +61,7 @@ def lambda_handler(event, context):
 
             # Check if the content of the site matches the tag of the bucket
             try:
-                with urllib.request.urlopen(url) as response:
+                with urllib.request.urlopen(url, timeout=3) as response:
                     content = response.read().decode('utf-8')
                     student = tags.get('Name')
                     if already_passed(student):
@@ -87,7 +87,7 @@ def lambda_handler(event, context):
                         except Exception as e:
                             print(f"Error creating {student} folder in the ica0017-results bucket: {e}")
             except:
-                print("Unable to retrieve the content of the site.")
+                print("Unable to retrieve the content of the site. Check that website is available to you.")
         except:
             print(f"Public site hosting is not enabled for the bucket {bucket}.")
             continue

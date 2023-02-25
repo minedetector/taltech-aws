@@ -104,7 +104,11 @@ def get_instance_public_ip(instance_id):
     
 def check_public_instance_contents(public_ip):
     correct_texts = ["Server version: 5.5.68-MariaDB", "Connect failed: Access denied for user"]
-    result = requests.get(f"http://{public_ip}")
+    try:
+        result = requests.get(f"http://{public_ip}", timeout=3)
+    except:
+        print("Website content is not availalbe, please check the public IP manually and see if the subnet and security group are correct.")
+        return False
 
     return any(text in result.text for text in correct_texts)
 

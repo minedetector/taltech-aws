@@ -147,8 +147,12 @@ def check_instances(event):
         public_ip = instance['Public IP']
 
         # Use requests to get the contents of the instance
-        result = requests.get(f"http://{public_ip}")
-
+        try:
+            result = requests.get(f"http://{public_ip}", timeout=3)
+        except Exception as e:
+            print("Your webpage is not accessible, please check if it opens the public IPv4 on your computer, it it doesn't check the subnet and security groups")
+            continue
+        
         if already_passed(name):
             print(f"{name} already exists and passed")
             continue
