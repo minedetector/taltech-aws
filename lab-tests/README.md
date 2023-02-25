@@ -51,3 +51,11 @@ was configured correctly, especially checking that the student uses their own re
 If all checks pass get the website contents a few times and store the output in a set.
 
 If the set has a size of more than 1 then pass the student.
+
+## Lab6
+
+Go through all of the objects in the `ica0017-lab6-states`.
+Get the contents of the terraform state object and check that the Security Group
+in the state file has HTTP and SSH allowed and get the instance-id to find the
+current public IP address. Check web addresses contents to make sure the uni_id
+is in the pages contents, if it is then create the `passed.txt`
