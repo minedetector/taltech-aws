@@ -19,7 +19,9 @@ def check_security_group_ingress(ingress_rules):
         elif rule['from_port'] == 80:
             http_allowed = True
     if ssh_allowed and http_allowed:
+        print("SSH and HTTP rules for the security group are configured correctly")
         return True
+    print("Either the ssh or HTTP rule is not set for the security group")
     return False
 
 def get_current_public_ip(instance_id):
@@ -28,8 +30,8 @@ def get_current_public_ip(instance_id):
             'Name': 'instance-id',
             'Values': [instance_id]
         }
-    ])["Reservations"][0]["Instances"][0]["PublicIpAddress"]
-    return instance_public_ip
+    ])
+    return instance_public_ip["Reservations"][0]["Instances"][0]["PublicIpAddress"] if "PublicIpAddress" in instance_public_ip["Reservations"][0]["Instances"][0] else None
 
 def create_passed_file(uni_id):
     try:
@@ -78,51 +80,55 @@ def lambda_handler(event, text):
     # Loop through each object in the response
     for obj in response['Contents']:
         # Get the object key (i.e., file path)
-        obj_key = obj['Key']
+        terraform_state_path = obj['Key']
         
         # Get the object content
-        obj_response = s3.get_object(Bucket=bucket_name, Key=obj_key)
+        terraform_state_content = s3.get_object(Bucket=bucket_name, Key=terraform_state_path)['Body'].read().decode('utf-8')
         
-        # Read the object content as a string
-        obj_content = obj_response['Body'].read().decode('utf-8')
-        
-        website, uni_id = None, None
+        instance_id, website, uni_id = None, None, None
 
         try:
-            obj_json = json.loads(obj_content)
+            obj_json = json.loads(terraform_state_content)
             for resource in obj_json["resources"]:
                 if resource["type"] == "aws_instance":
                     try:
                         uni_id = resource["instances"][0]["attributes"]["tags"]["User"]
+                        print(f"UNI-ID {uni_id} is defined")
                     except:
                         print("Instance has no User tag defined.")
                         continue
                     instance_id = resource["instances"][0]["attributes"]["id"]
                     website = get_current_public_ip(instance_id)
-                    if not website:
-                        print("There is no public IP defined for the instance, please check subnet")
-                        continue
                 elif resource["type"] == "aws_security_group":
                     ingress_rules = resource["instances"][0]["attributes"]["ingress"]
-            if check_security_group_ingress(ingress_rules):
-                student = None
-                try:
-                    student = event['User']
-                except:
-                    pass
-                if student and uni_id != student:
+            if not uni_id:
+                continue
+            if not instance_id:
+                print("There is no instance created through terraform")
+                continue
+            if not website:
+                print(f"There is no public IP defined for the instance {instance_id}, please check subnet and make sure the instance is running {uni_id}")
+                continue
+            if not check_security_group_ingress(ingress_rules):
+                continue
+            student = None
+            try:
+                student = event['User']
+            except:
+                pass
+            if student and uni_id != student:
+                continue
+            elif already_passed(uni_id):
+                continue
+            try:
+                website_content = requests.get(f"http://{website}", timeout=3)
+                if uni_id in website_content.text:
+                    create_passed_file(uni_id)
+                else:
+                    print(f"The website has no mention of {uni_id}, content of the website is {website_content.text}")
                     continue
-                elif already_passed(uni_id):
-                    continue
-                try:
-                    website_content = requests.get(f"http://{website}", timeout=3)
-                    if uni_id in website_content.text:
-                        create_passed_file(uni_id)
-                    else:
-                        print(f"The website has no mention of {uni_id}, content of the website is {website_content.text}")
-                        continue
-                except:
-                    print("Website not reachable, make sure the instances are still running, http is allowed and the connected subnet is publid and has internet access.")
+            except:
+                print("Website not reachable, make sure the instances are still running, http is allowed and the connected subnet is publid and has internet access.")
         except json.JSONDecodeError:
-            # If it's not a JSON object, ignore it
+            print("Error loading the JSON object.")
             pass

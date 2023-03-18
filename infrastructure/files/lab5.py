@@ -63,9 +63,8 @@ def check_subnet_internet_access(type, uni_id, subnet_id):
 
 def get_lb_address(uni_id, data):
     load_balancers = elbv2.describe_load_balancers()
-
+    correct_tg = False
     for lb in load_balancers['LoadBalancers']:
-        correct_tg = False
         # check if the type is application load balancer
         if lb['Type'] != 'application':
             print("The type of the Load balancer is wrong, should be application.")
@@ -79,16 +78,23 @@ def get_lb_address(uni_id, data):
                     correct_tg = True
                 else:
                     print(f"The Target Group with the tag User: {uni_id} is attached to the wrong Load balancer.")
+                    print(f"It should be attached to the LB {data['lb_id']} but it is attached to {lb['LoadBalancerArn']} instead.")
                     return False
                 if correct_tg:
+                    print(f"The Target Group with the tag User: {uni_id} is attached to the correct LB {data['lb_id']}")
                     subnets = lb['AvailabilityZones']
                     for subnet in subnets:
-                        if not check_subnet_internet_access("public", uni_id, subnet["SubnetId"]):
+                        subnet_id = subnet["SubnetId"]
+                        if not check_subnet_internet_access("public", uni_id, subnet_id):
                             print(f"The subnet {subnet} does not have internet access.")
                             return False
+                        else:
+                            print(f"Subnet: {subnet_id} has access to internet")
+                    print(f"DNS name is {lb['DNSName']}")
+                    return lb['DNSName']
                 else:
                     print(f"The User tag on the Loadbalancer: {tag['Value']} does not match any of the tags on the target groups")
-        return lb["DNSName"]
+    return False
 
 def check_security_groups(uni_id, sg_id):
     # Get all security groups
@@ -139,12 +145,13 @@ def get_launch_configuration_name(uni_id):
     # Get the launch configuration name
     response = autoscaling.describe_launch_configurations()['LaunchConfigurations']
     for lc in response:
-        if uni_id in lc['LaunchConfigurationName']:
+        lc_name = lc['LaunchConfigurationName']
+        if uni_id in lc_name:
             sg_id = lc['SecurityGroups'][0]
             if check_security_groups(uni_id, sg_id):
-                return lc['LaunchConfigurationName']
-        else:
-            print(f"didn't find a launch configuration that has {uni_id} in name")
+                print(f"LaunchConfiguration {lc_name} is correct")
+                return lc_name
+    print(f"didn't find a launch configuration that has {uni_id} in name")
     return None
 
 def check_subnet_internet_access(type, uni_id, subnet_id):
@@ -249,7 +256,7 @@ def lambda_handler(event, text):
         website_address = get_lb_address(uni_id, data)
         if not website_address:
             lb_id = data["lb_id"]
-            print(f"Load balancer {lb_id} for student {uni_id} is not correct")
+            print(f"Load balancer {lb_id} for student {uni_id} is not correct, did not find a DNS address for the loadbalancer {lb_id}")
             continue
         lc_name = get_launch_configuration_name(uni_id)
         if not lc_name:
@@ -258,11 +265,11 @@ def lambda_handler(event, text):
             continue
         different_websites = set()
 
-        for i in range (5):
+        for i in range (1, 6, 1):
+            print(f"number of times tried to get the webpages contents {i}")
             website_content = requests.get(f"http://{website_address}", timeout=3)
+            print(website_content.text)
             different_websites.add(website_content.text)
         
         if len(different_websites) > 1:
             create_passed_file(uni_id)
-            
-lambda_handler("test", "tests")
