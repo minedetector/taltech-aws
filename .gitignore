@@ -1,3 +1,5 @@
 *.tfstate*
 .terraform*
 */passed.txt
+*.zip
+!requests_layer.zip

@@ -6,9 +6,15 @@ terraform {
     }
   }
   required_version = ">= 1.0.11"
+
+  backend "s3" {
+    region = "eu-north-1"
+    bucket = "ica0017-tf-state"
+    key    = "ica0017-prerequisites.tfstate"
+  }
 }
 
 provider "aws" {
-  profile = "ica0017-admin"
+  profile = "ica0017_test_students"
   region  = "eu-north-1"
 }

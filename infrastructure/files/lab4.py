@@ -53,9 +53,10 @@ def check_subnet_internet_access(type, uni_id, subnet_id):
         routes = route_table['Routes']
         for route in routes:
             if "igw-" in route['GatewayId']:
-                print(f"\nThe {type} subnet {subnet_id} of {uni_id} has access to the internet")
+                print(" ")
+                print(f"The {type} subnet {subnet_id} of {uni_id} has access to the internet")
                 return True
-    print(f"\nThe {type} subnet {subnet_id} of {uni_id} does NOT have access to the internet")
+    print(f"The {type} subnet {subnet_id} of {uni_id} does NOT have access to the internet")
     return False
 
 def get_private_subnet_id(uni_id):
@@ -69,19 +70,32 @@ def get_private_subnet_id(uni_id):
             'Values': [f"{uni_id}*"]
         }
     ])
-    print(f"\nPrivate subnet exists for {uni_id}")
-    return response["Subnets"][0]["SubnetId"]
+    if len(response["Subnets"]) == 0:
+        print(f"No private subnet found for {uni_id}, please check that it exists and has the Name tag assigned")
+        return None
+    else:
+        print(f"\nPrivate subnet exists for {uni_id}")
+        return response["Subnets"][0]["SubnetId"]
 
-def get_instance_in_subnet(subnet_id):
+def get_instance_in_subnet(uni_id, subnet_id):
     instance_id = None
     response = ec2.describe_instances(Filters=[
         {
             'Name': 'subnet-id',
             'Values': [subnet_id]
+        },
+        {
+            'Name': 'tag:Name',
+            'Values': [f"{uni_id}*"]
         }
     ])
     if (len(response["Reservations"]) >= 1):
-        instance_id = response["Reservations"][0]["Instances"][0]["InstanceId"]
+        for reservation in response["Reservations"]:
+            for instance in reservation["Instances"]:
+                if 'Tags' in instance:
+                    name_tags = [tag['Value'] for tag in instance['Tags'] if tag['Key'] == 'Name']
+                    if not any('temp' in name_tag.lower() for name_tag in name_tags):
+                        instance_id = instance["InstanceId"]
     return instance_id
 
 def get_instance_public_ip(instance_id):
@@ -105,6 +119,7 @@ def get_instance_public_ip(instance_id):
 def check_public_instance_contents(public_ip):
     correct_texts = ["Server version: 5.5.68-MariaDB", "Connect failed: Access denied for user"]
     try:
+        print(f"Trying to get the contents of the public IP: {public_ip}")
         result = requests.get(f"http://{public_ip}", timeout=3)
     except:
         print("Website content is not availalbe, please check the public IP manually and see if the subnet and security group are correct.")
@@ -179,9 +194,15 @@ def lambda_handler(event, context):
                     if not check_subnet_internet_access("public", uni_id, public_subnet_id):
                         continue
                     private_subnet_id = get_private_subnet_id(uni_id)
+                    if not private_subnet_id:
+                        continue
                     if check_subnet_internet_access("private", uni_id, private_subnet_id):
                         continue
-                    public_instance_id = get_instance_in_subnet(public_subnet_id)
+                    public_instance_id = get_instance_in_subnet(uni_id, public_subnet_id)
+                    if not public_instance_id:
+                        print(f"No instances found in the public subnet: {public_subnet_id}")
+                        print("Make sure the instance is running and has a User tag defined.")
+                        continue
                     public_instance_public_ip = get_instance_public_ip(public_instance_id)
                     if public_instance_public_ip:
                         if check_public_instance_contents(public_instance_public_ip):
@@ -197,10 +218,11 @@ def lambda_handler(event, context):
                                 """)
                             continue
                     else:
-                        print(f"\nInstance {public_instance_id} has no public IP currently.")
+                        print(" ")
+                        print(f"Instance {public_instance_id} has no public IP currently.")
                         print(f"Check if the instance is running {uni_id}")
                         continue
-                    private_instance_id = get_instance_in_subnet(private_subnet_id)
+                    private_instance_id = get_instance_in_subnet(uni_id, private_subnet_id)
                     if not get_instance_public_ip(private_instance_id):
                         print("Private instance has no public IP attached, which is correct.")
                     create_passed_file(uni_id)
@@ -209,4 +231,4 @@ def lambda_handler(event, context):
         'body': json.dumps('Successful')
     }
 
-#lambda_handler("test", "test")
+#lambda_handler({"User": "larasi"}, "test")
