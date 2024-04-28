@@ -22,25 +22,10 @@ resource "aws_iam_policy" "this" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "S3ListBucket"
-        Effect = "Allow"
-        Action = [
-          "s3:ListBucket"
-        ]
-        Resource = [
-          "arn:aws:s3:::ica0017-results"
-        ]
-      },
-      {
-        Sid    = "S3ObjectActions"
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObjectTagging"
-        ]
-        Resource = [
-          "arn:aws:s3:::ica0017-results/*"
-        ]
+        Sid      = "AllowToUpdateTheLambdaFunction"
+        Effect   = "Allow",
+        Action   = "lambda:UpdateFunctionConfiguration",
+        Resource = "arn:aws:lambda:eu-north-1:943666862273:function:cleared-for-exam"
       }
     ]
   })

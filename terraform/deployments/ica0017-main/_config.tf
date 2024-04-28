@@ -15,6 +15,5 @@ terraform {
 }
 
 provider "aws" {
-  profile = "ica0017_test_students"
-  region  = "eu-north-1"
+  region = "eu-north-1"
 }

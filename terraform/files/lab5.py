@@ -1,275 +1,143 @@
 import boto3
 import requests
+from datetime import datetime
 
-# create an EC2 client
-elbv2 = boto3.client('elbv2')
 ec2 = boto3.client('ec2')
+elbv2 = boto3.client('elbv2')
+s3 = boto3.Session().client('s3')
 autoscaling = boto3.client('autoscaling')
-s3 = boto3.client('s3')
-
 lab = "lab5"
 
-def get_target_group_data():
-    # get a list of all target groups
-    target_groups = elbv2.describe_target_groups()['TargetGroups']
+# This is dumb
+# But for some reason this lambda function decides to cache the results of the previous run
+# meaning it doesn't show the correct output when students change something.
+# How big is the cache ? Does it have a TTL ? Who knows, thanks AWS
+def reset_lambda_function_cache(function_name):
+    now = datetime.now()
+    current_time = now.strftime("%H:%M:%S")
+    lambda_client = boto3.client('lambda')
+    lambda_client.update_function_configuration(
+        FunctionName=function_name,
+        Description=current_time
+    )
 
-    vpc_id = "vpc-05c91d040c3aa10ff"
+reset_lambda_function_cache(f"test-{lab}")
 
-    user_values = []
-    tg_data = {}
-
-    # loop through each target group and extract the "User" tag value
-    for tg in target_groups:
-        # get the tags for the target group
-        tags_response = elbv2.describe_tags(ResourceArns=[tg['TargetGroupArn']])
-        for tag in tags_response['TagDescriptions'][0]['Tags']:
-            # check if the tag key is "User"
-            if tag['Key'] == 'User':
-                uni_id = tag['Value']
-                if tg['Port'] != 80 or tg['VpcId'] != vpc_id or tg['ProtocolVersion'] != 'HTTP1':
-                    print(f"""
-                        Something isn't configured properly
-                        Port should be 80, current value is {tg['Port']}
-                        VPC Id should be {vpc_id}, current value is {tg['VpcId']}
-                        ProtocolVersion should be HTTP1, current value is {tg['ProtocolVersion']}
-                    """)
-                    continue
-                user_values.append(uni_id)
-                tg_data[uni_id] = {
-                    "lb_id": tg["LoadBalancerArns"][0], 
-                    "tg_arn": tg["TargetGroupArn"]
-                    }
-    return tg_data
-
-def check_subnet_internet_access(type, uni_id, subnet_id):
-    # Retrieve the route table associated with the subnet
-    response = ec2.describe_route_tables(Filters=[
-        {
-            'Name': 'association.subnet-id',
-            'Values': [subnet_id]
-        }
-    ])
-    route_tables = response['RouteTables']
-
-    # Check if the route table has a route to an internet gateway
-    for route_table in route_tables:
-        routes = route_table['Routes']
-        for route in routes:
-            if "igw-" in route['GatewayId']:
-                print(f"\nThe {type} subnet {subnet_id} of {uni_id} has access to the internet")
-                return True
-    print(f"\nThe {type} subnet {subnet_id} of {uni_id} does NOT have access to the internet")
-    return False
-
-def get_lb_address(uni_id, data):
-    load_balancers = elbv2.describe_load_balancers()
-    correct_tg = False
-    for lb in load_balancers['LoadBalancers']:
-        # check if the type is application load balancer
-        if lb['Type'] != 'application':
-            print("The type of the Load balancer is wrong, should be application.")
-            continue
-        tags_response = elbv2.describe_tags(ResourceArns=[lb['LoadBalancerArn']])
-        for tag in tags_response['TagDescriptions'][0]['Tags']:
-            # check if the loadbalancer has the same User tag as does one of the target groups
-            if tag['Key'] == 'User' and tag['Value'] == uni_id:
-                # Check if the Loadbalancer attached to the Target Group is correct
-                if data["lb_id"] == lb["LoadBalancerArn"]:
-                    correct_tg = True
-                else:
-                    print(f"The Target Group with the tag User: {uni_id} is attached to the wrong Load balancer.")
-                    print(f"It should be attached to the LB {data['lb_id']} but it is attached to {lb['LoadBalancerArn']} instead.")
-                    return False
-                if correct_tg:
-                    print(f"The Target Group with the tag User: {uni_id} is attached to the correct LB {data['lb_id']}")
-                    subnets = lb['AvailabilityZones']
-                    for subnet in subnets:
-                        subnet_id = subnet["SubnetId"]
-                        if not check_subnet_internet_access("public", uni_id, subnet_id):
-                            print(f"The subnet {subnet} does not have internet access.")
-                            return False
-                        else:
-                            print(f"Subnet: {subnet_id} has access to internet")
-                    print(f"DNS name is {lb['DNSName']}")
-                    return lb['DNSName']
-                else:
-                    print(f"The User tag on the Loadbalancer: {tag['Value']} does not match any of the tags on the target groups")
-    return False
-
-def check_security_groups(uni_id, sg_id):
-    # Get all security groups
-    security_group = ec2.describe_security_groups(Filters=[
-        {
-            'Name': 'group-id',
-            'Values': [sg_id]
-        }
-        ]
-    )['SecurityGroups'][0]
-
-    tags = security_group['Tags']
-    tag_set = False
-    
-    # Check if the tag with the key 'Name' and value UNI-id exists
-    for tag in tags:
-        if tag['Key'] == 'Name' and uni_id in tag['Value']:
-            tag_set = True
-            print(f"Security Group of student {uni_id} with id {sg_id} has the desired tag")
-
-            inbound_rules = security_group['IpPermissions']
-
-            # Check if the security group only allows inbound connections from SSH and HTTP
-            ssh_allowed = False
-            http_allowed = False
-            for rule in inbound_rules:
-                try:
-                    if rule['FromPort'] == 22 and len(rule['UserIdGroupPairs']) > 0:
-                        ssh_allowed = True
-                    elif rule['FromPort'] == 80:
-                        http_allowed = True
-                except:
-                    print(f"No spcific port ranges in security group {sg_id}")
-
-                if ssh_allowed and http_allowed:
-                    break
-            
-            if ssh_allowed and http_allowed:
-                print(f"Security Group {uni_id} with id {sg_id} has allowed inbound connections from SSH and HTTP")
-                return True
-            else:
-                print(f"Security Group {uni_id} with id {sg_id} does not have correct HTTP and SSH set up, make sure that port 80 is allowed for inbound and that SSH is allowed from other security group")
-    if tag_set == False:
-        print(f"No SG-s for student {uni_id}")
-    return False
-
-def get_launch_configuration_name(uni_id):
-    # Get the launch configuration name
-    response = autoscaling.describe_launch_configurations()['LaunchConfigurations']
-    for lc in response:
-        lc_name = lc['LaunchConfigurationName']
-        if uni_id in lc_name:
-            sg_id = lc['SecurityGroups'][0]
-            if check_security_groups(uni_id, sg_id):
-                print(f"LaunchConfiguration {lc_name} is correct")
-                return lc_name
-    print(f"didn't find a launch configuration that has {uni_id} in name")
-    return None
-
-def check_subnet_internet_access(type, uni_id, subnet_id):
-    # Retrieve the route table associated with the subnet
-    response = ec2.describe_route_tables(Filters=[
-        {
-            'Name': 'association.subnet-id',
-            'Values': [subnet_id]
-        }
-    ])
-    route_tables = response['RouteTables']
-
-    # Check if the route table has a route to an internet gateway
-    for route_table in route_tables:
-        routes = route_table['Routes']
-        for route in routes:
-            if "igw-" in route['GatewayId']:
-                print(f"\nThe {type} subnet {subnet_id} of {uni_id} has access to the internet")
-                return True
-    print(f"\nThe {type} subnet {subnet_id} of {uni_id} does NOT have access to the internet")
-    return False
-
-def correct_autoscaling_group(uni_id, lc_name, tg_arn):
+def get_asg_data(uniid):
     asg = autoscaling.describe_auto_scaling_groups(
         Filters=[
             {
-                'Name': 'tag:User',
-                'Values': [uni_id]
+                'Name': 'tag:Uniid',
+                'Values': [uniid]
             }
         ]
-    )['AutoScalingGroups'][0]
-    if asg['LaunchConfigurationName'] != lc_name:
-        print(f"Autoscaling group for {uni_id} does not use the correct launch configuration, should use {lc_name}, but is using {asg['LaunchConfigurationName']}")
-        return False
-    subnets = asg["VPCZoneIdentifier"].split(",")
-    for subnet in subnets:
-        if not check_subnet_internet_access("public", uni_id, subnet):
-            return False
-    if tg_arn not in asg['TargetGroupARNs']:
-        print(f"""
-        Wrong target group attached to autoscaling group.
-        Target group attached to autoscaling group is {asg['TargetGroupARNs'][0]}
-        but should be {tg_arn} instead 
-        """)
-        return False
-    return True
+    )
+    
+    if not asg['AutoScalingGroups']:
+        raise Exception(f"There doesn't exist a ASG where the Uniid tag equals to {uniid}")
+    
+    asg = asg['AutoScalingGroups'][0]
+    asg_info = {}
 
-def create_passed_file(uni_id):
+    asg_info["launch_template_id"] = asg["LaunchTemplate"]["LaunchTemplateId"]
+    asg_info["asg_subnets"] = asg['VPCZoneIdentifier']
+
+    print(f"Found your ASG {uniid}")
+
+    return asg_info
+
+def get_sg_from_lt(asg_data):
     try:
-        s3.put_object(Bucket='ica0017-results', Key=f"{lab}/{uni_id}/")
-        print(f"{uni_id} folder created in the ica0017-results bucket")
-        # Create a list of tags
-        tags = [{'Key': 'passed', 'Value': 'true'}, {'Key': 'author', 'Value': 'lambda'}]
+        lt = ec2.describe_launch_template_versions(
+            LaunchTemplateId=asg_data["launch_template_id"]
+        )['LaunchTemplateVersions'][0]['LaunchTemplateData']['SecurityGroupIds'][0]
 
-        # Upload the file to S3
-        s3.upload_file("passed.txt", 'ica0017-results', f'{lab}/{uni_id}/passed.txt')
+        print("Found the Security Group that is attached to the launch template")
 
-        # Add tags to the uploaded file
-        s3.put_object_tagging(Bucket='ica0017-results', Key=f'{lab}/{uni_id}/passed.txt', Tagging={'TagSet': tags})
-        print(f'passed.txt has been uploaded to {lab}/{uni_id}/passed.txt with tags')
-    except Exception as e:
-        print(f"Error creating {uni_id} folder in the ica0017-results bucket: {e}")
-
-
-def already_passed(name):
-    # Check if the passed.txt file exists in the folder
-    try:
-        s3.head_object(Bucket='ica0017-results', Key=f'{lab}/{name}/passed.txt')
-        print(f'passed.txt exists in the {lab}/{name}/ folder')
-        # Get the tags of the file
-        tags = s3.get_object_tagging(Bucket='ica0017-results', Key=f'{lab}/{name}/passed.txt')['TagSet']
-        passed = False
-        author = False
-        #iterate through the tags and check if the passed and author tags are correct
-        for tag in tags:
-            if tag['Key'] == 'passed' and tag['Value'] == 'true':
-                passed = True
-            if tag['Key'] == 'author' and tag['Value'] == 'lambda':
-                author = True
-        if passed and author:
-            print('passed.txt has the correct tags')
-            return True
-        else:
-            print('passed.txt does not have the correct tags')
+        return lt
     except:
-        print(f'passed.txt does not exist in the {lab}/{name}/ folder')
-    return False
+        raise Exception(f"\nLaunch template doesn't have a security group attached to it")
+    
+def check_webservers_security_group(sg_id):
 
-def lambda_handler(event, text):
-    target_group_data = get_target_group_data()
-    for uni_id, data in target_group_data.items():
-        student = None
-        try:
-            student = event['User']
-        except:
-            pass
-        if student != None and uni_id != student:
-            continue
-        if already_passed(uni_id):
-            print(f"{uni_id} already passed")
-            continue
-        website_address = get_lb_address(uni_id, data)
-        if not website_address:
-            lb_id = data["lb_id"]
-            print(f"Load balancer {lb_id} for student {uni_id} is not correct, did not find a DNS address for the loadbalancer {lb_id}")
-            continue
-        lc_name = get_launch_configuration_name(uni_id)
-        if not lc_name:
-            continue
-        if not correct_autoscaling_group(uni_id, lc_name, data["tg_arn"]):
-            continue
-        different_websites = set()
+    sg = ec2.describe_security_groups(GroupIds=[sg_id])['SecurityGroups'][0]
+    ingress_rules = sg['IpPermissions']
 
-        for i in range (1, 6, 1):
-            print(f"number of times tried to get the webpages contents {i}")
-            website_content = requests.get(f"http://{website_address}", timeout=3)
-            print(website_content.text)
-            different_websites.add(website_content.text)
+    webserver = {
+        'allow_port_80_from_internet': False,
+        'allow_port_22_from_mgmt_sg': False
+    }
+
+    for rule in ingress_rules:
+        if rule['FromPort'] == 80 and rule['IpRanges'][0]['CidrIp'] == '0.0.0.0/0':
+                webserver['allow_port_80_from_internet'] = True
         
-        if len(different_websites) > 1:
-            create_passed_file(uni_id)
+        if rule['FromPort'] == 22 and len(rule['UserIdGroupPairs']) > 0:
+            webserver['allow_port_22_from_mgmt_sg'] = True
+
+    if not all(webserver.values()):
+        raise Exception(f"Security group {sg_id} failed verification.\n Check results\n{webserver}")
+
+    print("All of the security groups for the instances have been configured correctly.")
+
+def get_lb_dns_name(uniid):
+    load_balancers = elbv2.describe_load_balancers()['LoadBalancers']
+    alb_arns = [lb['LoadBalancerArn'] for lb in load_balancers if lb['Type'] == 'application']
+
+    if alb_arns:
+        tag_descriptions = elbv2.describe_tags(ResourceArns=alb_arns)['TagDescriptions']
+        filtered_albs_arns = [
+            tag_desc['ResourceArn'] for tag_desc in tag_descriptions
+            if any(tag['Key'] == 'Uniid' and tag['Value'] == uniid for tag in tag_desc['Tags'])
+        ]
+
+        if filtered_albs_arns==[]:
+            raise Exception(f"Didn't find a ALB with the tag Uniid = {uniid}, please add it to your ALB.")
+
+        matched_alb_dns_names = [
+            lb['DNSName'] for lb in load_balancers if lb['LoadBalancerArn'] in filtered_albs_arns
+        ]
+        print("Found the DNS Name for your ALB.")
+        return matched_alb_dns_names[0]
+
+def check_webserver_content(dns_name):
+    different_websites = set()
+
+    for i in range (1, 5, 1):
+        website_content = requests.get(f"http://{dns_name}", timeout=3)
+        different_websites.add(website_content.text)
+    if len(different_websites) <= 1:
+        raise Exception(f"The website content didn't differ, make sure that you have multiple instances running.\nGot this content only {different_websites}")
+    print("Website content check passed, content is different on refreshes")
+
+def pass_student(uniid):
+    try:
+        s3.put_object(Bucket='ica0017-results', Key=f"{lab}/{uniid}/")
+        print(f"{uniid} folder created in the ica0017-results bucket")
+        print(f"Congratiulations {uniid}, you have passed lab  {lab}")
+    except Exception as e:
+        raise Exception(f"Error creating {uniid} folder in the ica0017-results bucket: {e}\nContact the teacher")
+
+def already_passed(uniid):
+    try:
+        s3.head_object(Bucket='ica0017-results', Key=f'{lab}/{uniid}/')
+        print(f'Congrats {uniid}, you have already passed lab {lab}')
+        return True
+    except:
+        return False
+
+def lambda_handler(event, context):
+    if 'Uniid' not in event:
+        raise Exception(f"Event does not contain 'Uniid'.\n The event provided by you is \n{event}\n")
+
+    uniid = event['Uniid']
+
+    if not already_passed(uniid):
+        asg_data = get_asg_data(uniid)
+        sg_id = get_sg_from_lt(asg_data)
+        check_webservers_security_group(sg_id)
+        dns_name = get_lb_dns_name(uniid)
+        check_webserver_content(dns_name)
+        pass_student(uniid)
+
+#lambda_handler({"Uniid": "lars"}, "test")

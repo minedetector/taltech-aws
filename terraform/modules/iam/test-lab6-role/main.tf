@@ -41,6 +41,12 @@ resource "aws_iam_policy" "this" {
           "ec2:DescribeSecurityGroups"
         ]
         Resource = "*"
+      },
+      {
+        Sid      = "AllowToUpdateTheLambdaFunction"
+        Effect   = "Allow",
+        Action   = "lambda:UpdateFunctionConfiguration",
+        Resource = "arn:aws:lambda:eu-north-1:943666862273:function:test-lab6"
       }
     ]
   })

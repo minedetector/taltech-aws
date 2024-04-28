@@ -37,6 +37,12 @@ resource "aws_iam_policy" "this" {
         Resource = [
           "arn:aws:s3:::ica0017-*"
         ]
+      },
+      {
+        Sid      = "AllowToUpdateTheLambdaFunction"
+        Effect   = "Allow",
+        Action   = "lambda:UpdateFunctionConfiguration",
+        Resource = "arn:aws:lambda:eu-north-1:943666862273:function:test-lab3"
       }
     ]
   })

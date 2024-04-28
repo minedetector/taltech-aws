@@ -1,0 +1,77 @@
+regions:
+- eu-north-1
+- global
+
+account-blocklist:
+- "303394270747" # taltech-management
+- "750780379892" # Audit
+- "877571692136" # Log Archive
+
+resource-types:
+  excludes:
+  - EC2VPC
+  - EC2InternetGateway
+  - IAMUser
+  - LambdaFunction
+  - CloudWatchEventsRule
+  - CloudWatchEventsTarget
+  - CloudWatchLogsLogGroup
+
+accounts:
+  "943666862273": # taltech-ica0017
+    filters:
+      IAMUser:
+      - "aws-nuke"
+      IAMUserPolicyAttachment:
+      - "aws-nuke -> AdministratorAccess"
+      IAMUserAccessKey:
+      - aws-nuke -> AKIA5XNXNTDAQVSB3N5Q"
+      EC2Subnet:
+      - subnet-098b2ee2b4fc6d33c
+      S3Bucket:
+      - s3://ica0017-results
+      - s3://ica0017-tf-state
+      - s3://ica0017-lab6-states
+      S3Object:
+      - type: contains
+        value: s3://ica0017-tf-state
+      - s3://ica0017-results/lab2
+      - s3://ica0017-results/lab3
+      - s3://ica0017-results/lab4
+      - s3://ica0017-results/lab5
+      - s3://ica0017-results/lab6
+      - s3://ica0017-results/cleared_for_exam
+      IAMRole:
+      - type: contains
+        value: test-lab
+      - downscale-asgs-after-hour-role
+      - cleared-for-exam-role
+      - stop-instances-after-hour
+
+      IAMPolicy:
+      - type: contains
+        value: arn:aws:iam::943666862273:policy/test-lab
+      - type: contains
+        value: arn:aws:iam::943666862273:policy/cleared-for-exam
+      - arn:aws:iam::943666862273:policy/UpdateTestFunctionsConfigurations
+      - arn:aws:iam::943666862273:policy/downscale-asgs-after-hour-policy
+      - arn:aws:iam::943666862273:policy/pass-students-policy
+
+      IAMRolePolicyAttachment:
+      - type: contains
+        value: test-lab
+      - type: contains
+        value: downscale-asgs-after-hour-role
+      - type: contains
+        value: cleared-for-exam-role
+      - type: contains
+        value: stop-instances-after-hour
+  
+      EC2RouteTable:
+        - rtb-04fb957f2fb778467
+
+      LambdaLayer:
+        - requests-layer
+
+      EC2DHCPOption:
+        - dopt-04bd10ecd1d189c8c

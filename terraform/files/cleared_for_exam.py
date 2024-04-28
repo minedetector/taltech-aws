@@ -1,5 +1,24 @@
 import boto3
-import json
+from datetime import datetime
+
+now = datetime.now()
+current_time = now.strftime("%H:%M:%S")
+print("Current Time =", current_time)
+
+lambda_client = boto3.client('lambda')
+
+# This is dumb
+# But for some reason this lambda function decides to cache the results of the previous run
+# meaning it doesn't show the correct output when students change something.
+# How big is the cache ? Does it have a TTL ? Who knows, thanks AWS
+def reset_lambda_function_cache(function_name):
+    response = lambda_client.update_function_configuration(
+        FunctionName=function_name,
+        Description=current_time
+    )
+    print(f"Lambda function {function_name} updated successfully.")
+
+reset_lambda_function_cache("cleared-for-exam")
 
 # Initialize the S3 client
 s3 = boto3.client('s3')
@@ -14,13 +33,13 @@ response = s3.list_objects_v2(Bucket=bucket_name)
 students_and_passed_labs = {}
 
 lab = "cleared_for_exam"
-labs_to_check = ["lab2", "lab3", "lab4", "lab5", "lab6"]
+labs_to_check = ["lab2", "lab3", "lab4", "lab5"]
 
 def already_passed(student):
     # Check if the passed.txt file exists in the folder
     try:
         s3.head_object(Bucket='ica0017-results', Key=f'{lab}/{student}/passed.txt')
-        print(f'{student} has already passed {lab}')
+        #print(f'{student} has already passed {lab}')
         # Get the tags of the file
         tags = s3.get_object_tagging(Bucket='ica0017-results', Key=f'{lab}/{student}/passed.txt')['TagSet']
         passed = False
@@ -32,19 +51,18 @@ def already_passed(student):
             if tag['Key'] == 'author' and tag['Value'] == 'lambda':
                 author = True
         if passed and author:
-            print('The pass is confirmed to be legitimate')
             return True
         else:
             print('ALERT the pass file is not legitimate')
     except:
-        print(f'First time for {student} to pass {lab}')
+        pass
     return False
 
 def create_passed_file(uni_id):
     if not (already_passed(uni_id)):
         try:
             s3.put_object(Bucket='ica0017-results', Key=f"{lab}/{uni_id}/")
-            print(f"{uni_id} folder created in the ica0017-results bucket")
+            #print(f"{uni_id} folder created in the ica0017-results bucket")
             # Create a list of tags
             tags = [{'Key': 'passed', 'Value': 'true'}, {'Key': 'author', 'Value': 'lambda'}]
 
@@ -53,7 +71,7 @@ def create_passed_file(uni_id):
 
             # Add tags to the uploaded file
             s3.put_object_tagging(Bucket='ica0017-results', Key=f'{lab}/{uni_id}/passed.txt', Tagging={'TagSet': tags})
-            print(f'passed.txt has been uploaded to {lab}/{uni_id}/passed.txt\n')
+            #print(f'passed.txt has been uploaded to {lab}/{uni_id}/passed.txt\n')
         except Exception as e:
             print(f"Error creating {uni_id} folder in the ica0017-results bucket: {e}")
 
@@ -88,7 +106,9 @@ def check_labs(event):
                 print(f"{student} has passed all tests\n")
                 create_passed_file(student)
             else:
-                print(f"{student} has currently passed {passed_labs_count} labs.\nThe labs are {passed_labs_string}\n")
+                print(f"{student} has currently passed {passed_labs_count} lab(s), which are {passed_labs_string}\n")
 
 def lambda_handler(event, context):
     check_labs(event)
+
+lambda_handler({"Users": "kiales"}, "test")

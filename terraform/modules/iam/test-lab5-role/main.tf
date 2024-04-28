@@ -21,6 +21,14 @@ resource "aws_iam_policy" "this" {
     Version = "2012-10-17"
     Statement = [
       {
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeRouteTables",
+          "ec2:DescribeSecurityGroups"
+        ]
+        Resource = "*"
+      },
+      {
         Sid    = "DescribeTargetGroupsAndTags"
         Effect = "Allow"
         Action = [
@@ -39,10 +47,11 @@ resource "aws_iam_policy" "this" {
         Resource = "*"
       },
       {
-        Sid    = "DescribeLaunchConfigurationsAndTags"
+        Sid    = "DescribeLaunchTemplatesAndTags"
         Effect = "Allow"
         Action = [
-          "autoscaling:DescribeLaunchConfigurations",
+          "ec2:DescribeLaunchTemplates",
+          "ec2:DescribeLaunchTemplateVersions",
           "autoscaling:DescribeTags"
         ]
         Resource = "*"
@@ -52,6 +61,12 @@ resource "aws_iam_policy" "this" {
         Effect   = "Allow"
         Action   = "autoscaling:DescribeAutoScalingGroups"
         Resource = "*"
+      },
+      {
+        Sid      = "AllowToUpdateTheLambdaFunction"
+        Effect   = "Allow",
+        Action   = "lambda:UpdateFunctionConfiguration",
+        Resource = "arn:aws:lambda:eu-north-1:943666862273:function:test-lab5"
       }
     ]
   })

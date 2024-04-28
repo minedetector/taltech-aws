@@ -47,13 +47,12 @@ module "stop_instance_after_hour_role" {
   name = "stop-instances-after-hour"
 }
 
-# TODO Change lambda function module to be more generic and not just for lab tests
 module "stop_instance_after_hour_lambda_function" {
-  source = "../../modules/test-lab-lambda-function"
+  source = "../../modules/lambda-function"
 
   name              = "stop_instance_after_hour"
   source_file_path  = "../../files/instanceStopFunction.py"
-  zip_file_path     = "../../files/instanceStopFunction.zip"
+  zip_file_path     = "../../files/zips/instanceStopFunction.zip"
   role_arn          = module.lab6_role.role_arn
   trigger_frequency = "rate(1 hour)"
 }
@@ -65,11 +64,11 @@ module "downscale_asg_role" {
 }
 
 module "downscale_asg_lambda_function" {
-  source = "../../modules/test-lab-lambda-function"
+  source = "../../modules/lambda-function"
 
   name              = "downscale_asgs"
   source_file_path  = "../../files/downscale_asgs.py"
-  zip_file_path     = "../../files/downscale_asgs.zip"
+  zip_file_path     = "../../files/zips/downscale_asgs.zip"
   role_arn          = module.downscale_asg_role.role_arn
   trigger_frequency = "rate(1 hour)"
 }
@@ -82,13 +81,12 @@ module "lab2_role" {
 }
 
 module "lab2" {
-  source = "../../modules/test-lab-lambda-function"
+  source = "../../modules/lambda-function"
 
   name              = "test-lab2"
   source_file_path  = "../../files/lab2.py"
-  zip_file_path     = "../../files/lab2.zip"
+  zip_file_path     = "../../files/zips/lab2.zip"
   role_arn          = module.lab2_role.role_arn
-  trigger_frequency = "rate(5 minutes)"
 }
 
 module "lab3_role" {
@@ -99,13 +97,14 @@ module "lab3_role" {
 }
 
 module "lab3" {
-  source = "../../modules/test-lab-lambda-function"
+  source = "../../modules/lambda-function"
 
   name              = "test-lab3"
   source_file_path  = "../../files/lab3.py"
-  zip_file_path     = "../../files/lab3.zip"
+  zip_file_path     = "../../files/zips/lab3.zip"
   role_arn          = module.lab3_role.role_arn
-  trigger_frequency = "rate(5 minutes)"
+  memory_size       = 198
+  timeout           = 300
 }
 
 module "lab4_role" {
@@ -116,13 +115,12 @@ module "lab4_role" {
 }
 
 module "lab4" {
-  source = "../../modules/test-lab-lambda-function"
+  source = "../../modules/lambda-function"
 
   name              = "test-lab4"
   source_file_path  = "../../files/lab4.py"
-  zip_file_path     = "../../files/lab4.zip"
+  zip_file_path     = "../../files/zips/lab4.zip"
   role_arn          = module.lab4_role.role_arn
-  trigger_frequency = "rate(5 minutes)"
 }
 
 module "lab5_role" {
@@ -133,13 +131,12 @@ module "lab5_role" {
 }
 
 module "lab5" {
-  source = "../../modules/test-lab-lambda-function"
+  source = "../../modules/lambda-function"
 
   name              = "test-lab5"
   source_file_path  = "../../files/lab5.py"
-  zip_file_path     = "../../files/lab5.zip"
+  zip_file_path     = "../../files/zips/lab5.zip"
   role_arn          = module.lab5_role.role_arn
-  trigger_frequency = "rate(5 minutes)"
 }
 
 module "lab6_role" {
@@ -151,13 +148,12 @@ module "lab6_role" {
 }
 
 module "lab6" {
-  source = "../../modules/test-lab-lambda-function"
+  source = "../../modules/lambda-function"
 
   name              = "test-lab6"
   source_file_path  = "../../files/lab6.py"
-  zip_file_path     = "../../files/lab6.zip"
+  zip_file_path     = "../../files/zips/lab6.zip"
   role_arn          = module.lab6_role.role_arn
-  trigger_frequency = "rate(5 minutes)"
 }
 
 module "cleared_for_exam_role" {
@@ -168,11 +164,11 @@ module "cleared_for_exam_role" {
 }
 
 module "cleared_for_exam" {
-  source = "../../modules/test-lab-lambda-function"
+  source = "../../modules/lambda-function"
 
   name              = "cleared-for-exam"
   source_file_path  = "../../files/cleared_for_exam.py"
-  zip_file_path     = "../../files/cleared_for_exam.zip"
+  zip_file_path     = "../../files/zips/cleared_for_exam.zip"
   role_arn          = module.cleared_for_exam_role.role_arn
   trigger_frequency = "rate(5 minutes)"
 }

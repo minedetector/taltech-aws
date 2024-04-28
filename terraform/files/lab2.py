@@ -4,190 +4,122 @@ import json
 import requests
 from datetime import datetime
 
-now = datetime.now()
-
-current_time = now.strftime("%H:%M:%S")
-print("Current Time =", current_time)
-
-lambda_client = boto3.client('lambda')
-
 # This is dumb
 # But for some reason this lambda function decides to cache the results of the previous run
 # meaning it doesn't show the correct output when students change something.
 # How big is the cache ? Does it have a TTL ? Who knows, thanks AWS
 def reset_lambda_function_cache(function_name):
-    response = lambda_client.update_function_configuration(
+    now = datetime.now()
+    current_time = now.strftime("%H:%M:%S")
+    lambda_client = boto3.client('lambda')
+    lambda_client.update_function_configuration(
         FunctionName=function_name,
         Description=current_time
     )
-    print(f"Lambda function {function_name} updated successfully.")
 
 reset_lambda_function_cache("test-lab2")
 
-# Create a session using the default profile
-session = boto3.Session()
-
-# Create a client to interact with the EC2 service
-ec2 = session.client('ec2')
-
-# Create a client to interact with the S3 service
-s3 = session.client('s3')
-
-# Use the describe_instances method to retrieve information about all instances
-instances = ec2.describe_instances()
-
-# Get all security groups
-security_groups = ec2.describe_security_groups()['SecurityGroups']
-
-# Create a list to store the instances' Name tags and public IP addresses
-instances_data = []
+ec2 = boto3.resource('ec2')
+ec2_client = boto3.client('ec2')
+s3 = boto3.Session().client('s3')
 
 lab = "lab2"
 
-
-def already_passed(name):
-    # Check if the passed.txt file exists in the folder
+def already_passed(uniid):
     try:
-        s3.head_object(Bucket='ica0017-results', Key=f'{lab}/{name}/passed.txt')
-        print(f'passed.txt exists in the {lab}/{name}/ folder')
-        # Get the tags of the file
-        tags = s3.get_object_tagging(Bucket='ica0017-results', Key=f'{lab}/{name}/passed.txt')['TagSet']
-        passed = False
-        author = False
-        #iterate through the tags and check if the passed and author tags are correct
-        for tag in tags:
-            if tag['Key'] == 'passed' and tag['Value'] == 'true':
-                passed = True
-            if tag['Key'] == 'author' and tag['Value'] == 'lambda':
-                author = True
-        if passed and author:
-            print('passed.txt has the correct tags')
-            return True
-        else:
-            print('passed.txt does not have the correct tags')
+        s3.head_object(Bucket='ica0017-results', Key=f'{lab}/{uniid}/')
+        print(f'Congrats {uniid}, you have already passed {lab}')
+        return True
     except:
-        print(f'passed.txt does not exist in the {lab}/{name}/ folder')
-    return False
+        return False
 
-def get_instances_tags_ip():
-    # Iterate through the reservations and instances to extract the data
-    for reservation in instances['Reservations']:
-        for instance in reservation['Instances']:
-            if instance['State']['Name'] != "running":
-                continue
-            name_tag = None
-            try:
-                public_ip = instance['PublicIpAddress']
-            except:
-                pass
+def get_students_instance(uniid):
+    filters = [
+        {
+            'Name': 'tag:Uniid',
+            'Values': [uniid]
+        },
+        {
+            'Name': 'tag:Lab',
+            'Values': ["2"]
+        },
+        {
+            'Name': 'instance-state-name',
+            'Values': ['running']
+        }
+    ]
 
+    instances = list(ec2.instances.filter(Filters=filters))
 
-            # Check if the instance has a Name tag
-            for tag in instance['Tags']:
-                if tag['Key'] == 'Name':
-                    name_tag = tag['Value']
-                    break
+    if not instances:
+        raise Exception(f"Didn't find a running instance with the tags Uniid={uniid} and Lab=2.")
 
-            # Append the instance's Name tag and public IP address to the list
-            instances_data.append({'Name': name_tag, 'Public IP': public_ip})
+    if len(instances) > 1:
+        raise Exception(f"Found {len(instances)} that use the same uniid, this test requires only 1 instance. \nPlease delete the extra node")
+    
+    print("Found the instance with the following configuration")
+    print(f'Instance ID: {instances[0].id}')
+    print(f'Public IP Address: {instances[0].public_ip_address}')
 
-def check_security_groups(sg_name):
-    # Loop through all security groups
-    for security_group in security_groups:
-        # Get the tags for the current security group
-        tags = security_group.get('Tags', [])
-        tag_set = False
-        
-        # Check if the tag with the key 'Name' and value UNI-id exists
-        for tag in tags:
-            if tag['Key'] == 'Name' and tag['Value'] == sg_name:
-                tag_set = True
-                print(f"Security Group {sg_name} with id {security_group['GroupId']} has the desired tag")
-
-                inbound_rules = security_group['IpPermissions']
-
-                # Check if the security group only allows inbound connections from SSH and HTTP
-                ssh_allowed = False
-                http_allowed = False
-                for rule in inbound_rules:
-                    for ip_range in rule.get('IpRanges', []):
-                        try:
-                            if rule['FromPort'] == 22:
-                                ssh_allowed = True
-                            elif rule['FromPort'] == 80:
-                                http_allowed = True
-                        except:
-                            print(f"No spcific port ranges in security group {sg_name}")
-                        if ssh_allowed and http_allowed:
-                            break
-
-                    if ssh_allowed and http_allowed:
-                        break
-                
-                if ssh_allowed and http_allowed:
-                    print(f"Security Group {sg_name} with id {security_group['GroupId']} has allowed inbound connections from SSH and HTTP")
-                    return True
-                else:
-                    print(f"Security Group {sg_name} with id {security_group['GroupId']} does not have allowed inbound connections from SSH and HTTP")
-    if tag_set == False:
-        print(f"No SG-s with the tag Name={sg_name}")
-    return False
-
-def check_instances(event):
-    # Iterate through the instances_data and curl the public IP address
-    uni_id = None
+    return instances[0]
+    
+def check_webserver_content(uniid, student_instance):
+    url = f"http://{student_instance.public_ip_address}"
     try:
-        uni_id = event['Name']
-    except:
-        pass
-    for instance in instances_data:
-        name = instance['Name']
-        if uni_id != None and uni_id not in name:
-            continue
-        public_ip = instance['Public IP']
+        instance_content = requests.get(url, timeout=3)
+    except Exception as e:
+        raise Exception(f"Your webpage is not accessible {uniid}\nplease check if it opens the public IPv4 on your computer, it it doesn't check the subnet and security groups")
 
-        # Use requests to get the contents of the instance
-        try:
-            result = requests.get(f"http://{public_ip}", timeout=3)
-        except Exception as e:
-            print("Your webpage is not accessible, please check if it opens the public IPv4 on your computer, it it doesn't check the subnet and security groups")
-            continue
+    if uniid in instance_content.text:
+        print(f"The webservers content is correct {uniid}")
+
+def check_attached_security_group(uniid, student_instance):
+    security_groups = student_instance.security_groups
+    allowed_ports = {22, 80}
+    found_ports = set()
+
+    for sg in security_groups:
+        sg_id = sg['GroupId']
+
+        security_group_details = ec2_client.describe_security_groups(GroupIds=[sg_id])['SecurityGroups'][0]
+
+        for permission in security_group_details['IpPermissions']:
+            if permission['FromPort'] <= 80 <= permission['ToPort']:
+                found_ports.append(80)
+            if permission['FromPort'] <= 22 <= permission['ToPort']:
+                found_ports.append(22)
         
-        if already_passed(name):
-            print(f"{name} already exists and passed")
-            continue
-
-        # Compare the webpage contents with the Name tag
-        if name in result.text and check_security_groups(name):
-            print(f"Instance {name} has the correct Name tag")
-            #create a folder in the ica0017-results bucket
-            try:
-                s3.put_object(Bucket='ica0017-results', Key=f"{lab}/{name}/")
-                print(f"{name} folder created in the ica0017-results bucket")
-                # Create a list of tags
-                tags = [{'Key': 'passed', 'Value': 'true'}, {'Key': 'author', 'Value': 'lambda'}]
-
-                # Create passed.txt file
-                # subprocess.run(["touch", "passed.txt"])
-
-                # Upload the file to S3
-                s3.upload_file("passed.txt", 'ica0017-results', f'{lab}/{name}/passed.txt')
-
-                # Add tags to the uploaded file
-                s3.put_object_tagging(Bucket='ica0017-results', Key=f'{lab}/{name}/passed.txt', Tagging={'TagSet': tags})
-                print(f'passed.txt has been uploaded to {lab}/{name} with tags')
-            except Exception as e:
-                print(f"Error creating {name} folder in the ica0017-results bucket: {e}")
+        if found_ports == allowed_ports:
+            print("Security Group correctly configured.")
         else:
-            print(f"Instance {name} does not have the correct Name tag")
+            raise Exception(f"  Incorrect configuration: Ports {found_ports} are open. Expected only 22 and 80.")
 
-def lambda_handler(event, context):
-    get_instances_tags_ip()
-    check_instances(event)
+def pass_student(uniid):
+    try:
+        s3.put_object(Bucket='ica0017-results', Key=f"{lab}/{uniid}/")
+        print(f"{uniid} folder created in the ica0017-results bucket")
+        print(f"Congratiulations {uniid}, you have passed {lab}")
+    except Exception as e:
+        raise Exception(f"Error creating {uniid} folder in the ica0017-results bucket: {e}\nContact the teacher")
 
+def lambda_handler(event, context=""):
+    if 'Uniid' not in event:
+        print("Event does not contain 'Uniid'.")
+        print(f"Event body: \n{event}\n")
+        return {
+            'statusCode': 404,
+            'body': json.dumps({'error': "Missing 'Uniid' in event"})
+        }
+    
+    uniid = event['Uniid']
+    if not already_passed(uniid):
+        student_instance = get_students_instance(uniid)
+        check_attached_security_group(uniid, student_instance)
+        check_webserver_content(uniid, student_instance)
+        pass_student(uniid)
     return {
         'statusCode': 200,
-        'body': json.dumps({'message': f'Hello, DONE!'})
+        'body': {'message': f'{lab} completed!'}
     }
 
-#lambda_handler("test", "test")
+#lambda_handler({"Uniid": "lars"})
