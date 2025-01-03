@@ -70,7 +70,7 @@ resource "aws_instance" "web" {
     aws_security_group.this.id
   ]
 
-  key_name = "lars-windows"
+  key_name = "lars-work-mac"
 
   tags = {
     User = var.uni_id
