@@ -66,7 +66,9 @@ resource "aws_instance" "web" {
 
   user_data = base64encode(templatefile("init_script.sh", { uni_id = var.uni_id }))
 
-  vpc_security_group_ids = [aws_security_group.this.id]
+  vpc_security_group_ids = [
+    aws_security_group.this.id
+  ]
 
   key_name = "lars-work-mac"
 
