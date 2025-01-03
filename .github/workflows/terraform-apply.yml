@@ -21,7 +21,8 @@ jobs:
       run:
         working-directory: terraform/deployments/lab6
     permissions:
-      contents: read
+      contents: write
+      issues: write
       id-token: write
       pull-requests: write
     steps:
@@ -95,7 +96,7 @@ jobs:
       - name: Request Approval
         uses: trstringer/manual-approval@v1
         with:
-          secret: ${{ github.TOKEN }}
+          secret: ${{ secrets.PAT }}
           approvers: ${{ github.actor }}
           minimum-approvals: 1
           issue-title: "Approve Terraform Apply"
