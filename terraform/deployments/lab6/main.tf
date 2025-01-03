@@ -7,8 +7,8 @@ terraform {
   }
   backend "s3" {
     region = "eu-north-1"
-    bucket = "ica0017-lab6-states"
-    key    = "ica0017-lars.tfstate"
+    bucket = "ica0017-lab6-larasi-terraform-state"
+    key    = "ica0017-larasi.tfstate"
   }
 
   required_version = ">= 1.3.7"
@@ -19,8 +19,8 @@ provider "aws" {
 }
 
 resource "aws_security_group" "this" {
-  name = "${var.uni_id}-sg-tf"
-  vpc_id      = "vpc-0864ffadf65555894"
+  name   = "${var.uni_id}-sg-tf"
+  vpc_id = var.vpc_id
 
   ingress {
     from_port   = 22
@@ -62,9 +62,9 @@ resource "aws_instance" "web" {
   ami           = "ami-04175dfed7619fb38"
   instance_type = "t3.micro"
 
-  subnet_id = "subnet-098b2ee2b4fc6d33c"
+  subnet_id = "subnet-0a4b809ee0eb4b83c"
 
-  user_data = base64encode(templatefile("init_script.sh", {uni_id = var.uni_id}))
+  user_data = base64encode(templatefile("init_script.sh", { uni_id = var.uni_id }))
 
   vpc_security_group_ids = [
     aws_security_group.this.id
