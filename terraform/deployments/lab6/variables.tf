@@ -5,7 +5,7 @@ variable "uni_id" {
 }
 
 variable "vpc_id" {
-  type = string
+  type        = string
   description = "ID of main VPC"
-  default = "vpc-0864ffadf65555894"
+  default     = "vpc-0e189b2bb856cb1e0"
 }
